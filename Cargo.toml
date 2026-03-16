@@ -1,7 +1,10 @@
 [package]
-name = "nightguard_tray"
+name = "nightscout_tray"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+directories = "5"
 ksni = { version = "0.3", features = ["blocking"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
