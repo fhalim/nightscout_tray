@@ -497,17 +497,6 @@ fn numeric_icon(reading: u16) -> ksni::Icon {
 
     let mut rgba = vec![0_u8; SIZE * SIZE * 4];
 
-    fill_rect(&mut rgba, SIZE, 0, 0, SIZE, SIZE, [32, 122, 74, 255]);
-    fill_rect(
-        &mut rgba,
-        SIZE,
-        2,
-        2,
-        SIZE - 4,
-        SIZE - 4,
-        [238, 248, 241, 255],
-    );
-
     for (index, ch) in text.chars().enumerate() {
         let digit_x = offset_x + index * (DIGIT_WIDTH + DIGIT_SPACING) * SCALE;
         draw_digit(
@@ -517,7 +506,7 @@ fn numeric_icon(reading: u16) -> ksni::Icon {
             digit_x,
             offset_y,
             SCALE,
-            [23, 69, 44, 255],
+            [32, 122, 74, 255],
         );
     }
 
