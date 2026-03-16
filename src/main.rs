@@ -3,20 +3,24 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
 
 use directories::ProjectDirs;
 use ksni::blocking::TrayMethods;
 use ksni::menu::{MenuItem, StandardItem};
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_REFRESH_MINUTES: u64 = 5;
 const INITIAL_READING: u16 = 110;
-const SAMPLE_READINGS: [u16; 6] = [110, 108, 112, 115, 109, 106];
+const DEFAULT_NIGHTSCOUT_URL: &str = "http://localhost:1337";
+const DEFAULT_API_TOKEN: &str = "mysecrettoken";
+const READINGS_BUFFER_SIZE: usize = 10;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
@@ -29,8 +33,8 @@ struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            nightscout_url: String::new(),
-            api_token: String::new(),
+            nightscout_url: DEFAULT_NIGHTSCOUT_URL.to_string(),
+            api_token: DEFAULT_API_TOKEN.to_string(),
             refresh_minutes: DEFAULT_REFRESH_MINUTES,
         }
     }
@@ -47,20 +51,26 @@ impl AppConfig {
 
 struct SharedState {
     refresh_minutes: AtomicU64,
-    sample_index: AtomicUsize,
+    recent_entries: Mutex<Vec<CgmEntry>>,
 }
 
 impl SharedState {
     fn new(refresh_minutes: u64) -> Self {
         Self {
             refresh_minutes: AtomicU64::new(refresh_minutes.max(1)),
-            sample_index: AtomicUsize::new(0),
+            recent_entries: Mutex::new(Vec::new()),
         }
     }
 }
 
 enum AppCommand {
     OpenSettings,
+    RefreshNow,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct CgmEntry {
+    sgv: u16,
 }
 
 struct NightscoutTray {
@@ -85,9 +95,8 @@ impl NightscoutTray {
         }
     }
 
-    fn advance_sample(&mut self) {
-        let index = self.shared.sample_index.fetch_add(1, Ordering::Relaxed);
-        self.reading = SAMPLE_READINGS[index % SAMPLE_READINGS.len()];
+    fn set_reading(&mut self, reading: u16) {
+        self.reading = reading;
     }
 
     fn apply_config(&mut self, config: AppConfig) {
@@ -112,6 +121,17 @@ impl NightscoutTray {
             "API token: configured".to_string()
         }
     }
+
+    fn buffer_status_label(&self) -> String {
+        let entry_count = self
+            .shared
+            .recent_entries
+            .lock()
+            .map(|entries| entries.len())
+            .unwrap_or(0);
+
+        format!("Buffered entries: {entry_count}")
+    }
 }
 
 impl ksni::Tray for NightscoutTray {
@@ -129,11 +149,14 @@ impl ksni::Tray for NightscoutTray {
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let settings_sender = self.command_sender.clone();
+        let refresh_sender = self.command_sender.clone();
 
         vec![
             StandardItem {
                 label: "Refresh now".to_string(),
-                activate: Box::new(|tray: &mut NightscoutTray| tray.advance_sample()),
+                activate: Box::new(move |_tray: &mut NightscoutTray| {
+                    let _ = refresh_sender.send(AppCommand::RefreshNow);
+                }),
                 ..Default::default()
             }
             .into(),
@@ -164,11 +187,17 @@ impl ksni::Tray for NightscoutTray {
                 ..Default::default()
             }
             .into(),
+            StandardItem {
+                label: self.buffer_status_label(),
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
         ]
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
-        self.advance_sample();
+        let _ = self.command_sender.send(AppCommand::RefreshNow);
     }
 }
 
@@ -211,6 +240,10 @@ fn run_controller(
     mut config: AppConfig,
     shared: Arc<SharedState>,
 ) {
+    if refresh_from_nightscout(&handle, &config, &shared).is_none() {
+        return;
+    }
+
     loop {
         if handle.is_closed() {
             break;
@@ -250,6 +283,10 @@ fn run_controller(
                     {
                         break;
                     }
+
+                    if refresh_from_nightscout(&handle, &config, &shared).is_none() {
+                        break;
+                    }
                 }
                 Ok(None) => {}
                 Err(error) => {
@@ -258,8 +295,13 @@ fn run_controller(
                     show_error_dialog(&message);
                 }
             },
+            Ok(AppCommand::RefreshNow) => {
+                if refresh_from_nightscout(&handle, &config, &shared).is_none() {
+                    break;
+                }
+            }
             Err(RecvTimeoutError::Timeout) => {
-                if handle.update(|tray| tray.advance_sample()).is_none() {
+                if refresh_from_nightscout(&handle, &config, &shared).is_none() {
                     break;
                 }
             }
@@ -336,6 +378,61 @@ fn open_settings_dialog(current: &AppConfig) -> io::Result<Option<AppConfig>> {
             }
         }
     }
+}
+
+fn refresh_from_nightscout(
+    handle: &ksni::blocking::Handle<NightscoutTray>,
+    config: &AppConfig,
+    shared: &Arc<SharedState>,
+) -> Option<()> {
+    match fetch_recent_entries(config) {
+        Ok(entries) => {
+            let first_reading = entries.first().map(|entry| entry.sgv);
+
+            if let Ok(mut buffered) = shared.recent_entries.lock() {
+                *buffered = entries;
+            }
+
+            if let Some(reading) = first_reading {
+                handle.update(move |tray| tray.set_reading(reading))?;
+            } else {
+                handle.update(|_tray| {})?;
+            }
+
+            Some(())
+        }
+        Err(error) => {
+            eprintln!("NightScout refresh failed: {error}");
+            handle.update(|_tray| {})?;
+            Some(())
+        }
+    }
+}
+
+fn fetch_recent_entries(config: &AppConfig) -> Result<Vec<CgmEntry>, Box<dyn Error>> {
+    if config.nightscout_url.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let endpoint = format!(
+        "{}/api/v1/entries.json",
+        config.nightscout_url.trim_end_matches('/')
+    );
+
+    let client = Client::builder().build()?;
+    let request = client.get(endpoint);
+    let request = if config.api_token.is_empty() {
+        request
+    } else {
+        request.query(&[("token", config.api_token.as_str())])
+    };
+
+    let mut entries = request
+        .send()?
+        .error_for_status()?
+        .json::<Vec<CgmEntry>>()?;
+    entries.truncate(READINGS_BUFFER_SIZE);
+    Ok(entries)
 }
 
 fn prompt_text_input(title: &str, prompt: &str, initial_value: &str) -> io::Result<Option<String>> {

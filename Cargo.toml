@@ -6,5 +6,6 @@ edition = "2024"
 [dependencies]
 directories = "5"
 ksni = { version = "0.3", features = ["blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
