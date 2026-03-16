@@ -1,3 +1,4 @@
+mod autostart;
 mod config;
 mod controller;
 mod dialogs;

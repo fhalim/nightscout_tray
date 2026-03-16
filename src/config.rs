@@ -10,12 +10,13 @@ pub const DEFAULT_REFRESH_MINUTES: u64 = 5;
 pub const DEFAULT_NIGHTSCOUT_URL: &str = "http://localhost:1337";
 pub const DEFAULT_API_TOKEN: &str = "mysecrettoken";
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
 pub struct AppConfig {
     pub nightscout_url: String,
     pub api_token: String,
     pub refresh_minutes: u64,
+    pub launch_on_startup: bool,
 }
 
 impl Default for AppConfig {
@@ -24,6 +25,7 @@ impl Default for AppConfig {
             nightscout_url: DEFAULT_NIGHTSCOUT_URL.to_string(),
             api_token: DEFAULT_API_TOKEN.to_string(),
             refresh_minutes: DEFAULT_REFRESH_MINUTES,
+            launch_on_startup: false,
         }
     }
 }
@@ -35,6 +37,10 @@ impl AppConfig {
         self.refresh_minutes = self.refresh_minutes.max(1);
         self
     }
+}
+
+pub fn parse_config(contents: &str) -> Result<AppConfig, toml::de::Error> {
+    toml::from_str::<AppConfig>(contents).map(AppConfig::normalized)
 }
 
 pub fn config_path() -> io::Result<PathBuf> {
@@ -50,8 +56,8 @@ pub fn config_path() -> io::Result<PathBuf> {
 
 pub fn load_config(path: &Path) -> Result<AppConfig, Box<dyn Error>> {
     match fs::read_to_string(path) {
-        Ok(contents) => match toml::from_str::<AppConfig>(&contents) {
-            Ok(config) => Ok(config.normalized()),
+        Ok(contents) => match parse_config(&contents) {
+            Ok(config) => Ok(config),
             Err(error) => {
                 eprintln!(
                     "Could not parse {}: {error}. Falling back to defaults.",
@@ -74,4 +80,44 @@ pub fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
         .map_err(|error| io::Error::other(format!("toml serialization failed: {error}")))?;
 
     fs::write(path, contents)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        parse_config, AppConfig, DEFAULT_API_TOKEN, DEFAULT_NIGHTSCOUT_URL, DEFAULT_REFRESH_MINUTES,
+    };
+
+    #[test]
+    fn parse_config_uses_defaults_for_missing_fields() {
+        let config = parse_config("").expect("config should parse");
+
+        assert_eq!(config.nightscout_url, DEFAULT_NIGHTSCOUT_URL);
+        assert_eq!(config.api_token, DEFAULT_API_TOKEN);
+        assert_eq!(config.refresh_minutes, DEFAULT_REFRESH_MINUTES);
+        assert!(!config.launch_on_startup);
+    }
+
+    #[test]
+    fn parse_config_normalizes_whitespace_and_refresh_value() {
+        let config = parse_config(
+            r#"
+nightscout_url = "  http://example.test  "
+api_token = "  secret-token  "
+refresh_minutes = 0
+launch_on_startup = true
+"#,
+        )
+        .expect("config should parse");
+
+        assert_eq!(
+            config,
+            AppConfig {
+                nightscout_url: "http://example.test".to_string(),
+                api_token: "secret-token".to_string(),
+                refresh_minutes: 1,
+                launch_on_startup: true,
+            }
+        );
+    }
 }

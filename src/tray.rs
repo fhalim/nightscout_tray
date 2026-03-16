@@ -3,7 +3,7 @@ use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use ksni::menu::{MenuItem, StandardItem};
+use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
 
 use crate::config::AppConfig;
 use crate::icon::numeric_icon;
@@ -12,6 +12,7 @@ use crate::nightscout::CgmEntry;
 pub struct SharedState {
     refresh_minutes: AtomicU64,
     recent_entries: Mutex<Vec<CgmEntry>>,
+    last_error: Mutex<Option<String>>,
 }
 
 impl SharedState {
@@ -19,6 +20,7 @@ impl SharedState {
         Self {
             refresh_minutes: AtomicU64::new(refresh_minutes.max(1)),
             recent_entries: Mutex::new(Vec::new()),
+            last_error: Mutex::new(None),
         }
     }
 
@@ -36,10 +38,27 @@ impl SharedState {
             .store(refresh_minutes.max(1), Ordering::Relaxed);
     }
 
-    pub fn replace_entries(&self, entries: Vec<CgmEntry>) {
+    pub fn record_entries(&self, entries: Vec<CgmEntry>) {
         if let Ok(mut buffered) = self.recent_entries.lock() {
             *buffered = entries;
         }
+
+        if let Ok(mut last_error) = self.last_error.lock() {
+            *last_error = None;
+        }
+    }
+
+    pub fn record_error(&self, error: impl Into<String>) {
+        if let Ok(mut last_error) = self.last_error.lock() {
+            *last_error = Some(error.into());
+        }
+    }
+
+    pub fn latest_entry(&self) -> Option<CgmEntry> {
+        self.recent_entries
+            .lock()
+            .ok()
+            .and_then(|entries| entries.first().cloned())
     }
 
     fn buffered_entry_count(&self) -> usize {
@@ -48,11 +67,52 @@ impl SharedState {
             .map(|entries| entries.len())
             .unwrap_or(0)
     }
+
+    fn fetch_status_label(&self) -> String {
+        match self.last_error.lock() {
+            Ok(error) => match error.as_deref() {
+                Some(message) => format!("Last fetch failed: {}", summarize(message, 36)),
+                None if self.buffered_entry_count() > 0 => "Last fetch: ok".to_string(),
+                None => "Last fetch: waiting for data".to_string(),
+            },
+            Err(_) => "Last fetch: unavailable".to_string(),
+        }
+    }
+
+    fn tooltip_description(&self) -> String {
+        let mut lines = Vec::new();
+
+        if let Some(entry) = self.latest_entry() {
+            lines.push(format!("SGV: {} mg/dL", entry.sgv));
+
+            if let Some(direction) = entry.direction {
+                lines.push(format!("Direction: {direction}"));
+            }
+
+            if let Some(date_string) = entry.date_string {
+                lines.push(format!("Timestamp: {date_string}"));
+            }
+        } else {
+            lines.push("No CGM data loaded yet".to_string());
+        }
+
+        match self.last_error.lock() {
+            Ok(error) => {
+                if let Some(message) = error.as_deref() {
+                    lines.push(format!("Error: {}", summarize(message, 72)));
+                }
+            }
+            Err(_) => lines.push("Error: could not read fetch status".to_string()),
+        }
+
+        lines.join("<br/>")
+    }
 }
 
 pub enum AppCommand {
     OpenSettings,
     RefreshNow,
+    ToggleLaunchOnStartup,
     Quit,
 }
 
@@ -91,6 +151,7 @@ impl NightscoutTray {
             disabled_item(self.url_status_label()).into(),
             disabled_item(format!("Refresh every {} min", self.config.refresh_minutes)).into(),
             disabled_item(self.token_status_label()).into(),
+            disabled_item(self.shared.fetch_status_label()).into(),
             disabled_item(format!(
                 "Buffered entries: {}",
                 self.shared.buffered_entry_count()
@@ -132,9 +193,19 @@ impl ksni::Tray for NightscoutTray {
         vec![numeric_icon(self.reading)]
     }
 
+    fn tool_tip(&self) -> ksni::ToolTip {
+        ksni::ToolTip {
+            icon_name: String::new(),
+            icon_pixmap: vec![numeric_icon(self.reading)],
+            title: format!("NightScout {}", self.reading),
+            description: self.shared.tooltip_description(),
+        }
+    }
+
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let settings_sender = self.command_sender.clone();
         let refresh_sender = self.command_sender.clone();
+        let startup_sender = self.command_sender.clone();
         let quit_sender = self.command_sender.clone();
         let mut items = vec![
             action_item("Refresh now", move || {
@@ -144,6 +215,14 @@ impl ksni::Tray for NightscoutTray {
             action_item("Settings...", move || {
                 let _ = settings_sender.send(AppCommand::OpenSettings);
             })
+            .into(),
+            checkmark_item(
+                "Launch on startup",
+                self.config.launch_on_startup,
+                move || {
+                    let _ = startup_sender.send(AppCommand::ToggleLaunchOnStartup);
+                },
+            )
             .into(),
             MenuItem::Separator,
         ];
@@ -179,6 +258,18 @@ fn disabled_item(label: String) -> StandardItem<NightscoutTray> {
     StandardItem {
         label,
         enabled: false,
+        ..Default::default()
+    }
+}
+
+fn checkmark_item<F>(label: &str, checked: bool, action: F) -> CheckmarkItem<NightscoutTray>
+where
+    F: Fn() + Send + 'static,
+{
+    CheckmarkItem {
+        label: label.to_string(),
+        checked,
+        activate: Box::new(move |_tray: &mut NightscoutTray| action()),
         ..Default::default()
     }
 }

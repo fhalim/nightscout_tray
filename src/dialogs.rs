@@ -4,34 +4,48 @@ use std::process::Command;
 use crate::config::AppConfig;
 
 pub fn open_settings_dialog(current: &AppConfig) -> io::Result<Option<AppConfig>> {
-    let mut draft = toml::to_string_pretty(current)
-        .map_err(|error| io::Error::other(format!("toml serialization failed: {error}")))?;
+    let Some(nightscout_url) = prompt_input(
+        "NightScout Settings",
+        "NightScout base URL",
+        &current.nightscout_url,
+        "Next",
+    )?
+    else {
+        return Ok(None);
+    };
 
-    loop {
-        let Some(value) = prompt_text_input(
-            "NightScout Settings",
-            "Edit the NightScout URL, API token, and refresh frequency, then click Save.",
-            &draft,
-        )?
-        else {
-            return Ok(None);
-        };
+    let Some(api_token) = prompt_input(
+        "NightScout Settings",
+        "NightScout API token",
+        &current.api_token,
+        "Next",
+    )?
+    else {
+        return Ok(None);
+    };
 
-        draft = value;
+    let Some(refresh_minutes) = prompt_slider(
+        "NightScout Settings",
+        "Refresh frequency in minutes",
+        current.refresh_minutes,
+        1,
+        120,
+        1,
+        "Save",
+    )?
+    else {
+        return Ok(None);
+    };
 
-        match toml::from_str::<AppConfig>(&draft) {
-            Ok(config) if config.refresh_minutes > 0 => return Ok(Some(config.normalized())),
-            Ok(_) => {
-                show_error_dialog("Refresh frequency must be a whole number greater than 0.");
-            }
-            Err(error) => {
-                let message = format!(
-                    "Settings must be valid TOML with `nightscout_url`, `api_token`, and `refresh_minutes`: {error}"
-                );
-                show_error_dialog(&message);
-            }
+    Ok(Some(
+        AppConfig {
+            nightscout_url,
+            api_token,
+            refresh_minutes,
+            launch_on_startup: current.launch_on_startup,
         }
-    }
+        .normalized(),
+    ))
 }
 
 pub fn show_error_dialog(message: &str) {
@@ -40,16 +54,21 @@ pub fn show_error_dialog(message: &str) {
         .status();
 }
 
-fn prompt_text_input(title: &str, prompt: &str, initial_value: &str) -> io::Result<Option<String>> {
+fn prompt_input(
+    title: &str,
+    prompt: &str,
+    initial_value: &str,
+    ok_label: &str,
+) -> io::Result<Option<String>> {
     let output = Command::new("kdialog")
         .args([
             "--title",
             title,
             "--ok-label",
-            "Save",
+            ok_label,
             "--cancel-label",
             "Cancel",
-            "--textinputbox",
+            "--inputbox",
             prompt,
             initial_value,
         ])
@@ -59,6 +78,54 @@ fn prompt_text_input(title: &str, prompt: &str, initial_value: &str) -> io::Resu
         Some(0) => Ok(Some(
             String::from_utf8_lossy(&output.stdout).trim().to_string(),
         )),
+        Some(1) => Ok(None),
+        _ => Err(io::Error::other(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        )),
+    }
+}
+
+fn prompt_slider(
+    title: &str,
+    prompt: &str,
+    initial_value: u64,
+    min: u64,
+    max: u64,
+    step: u64,
+    ok_label: &str,
+) -> io::Result<Option<u64>> {
+    let initial_value = initial_value.clamp(min, max);
+    let initial_value = initial_value.to_string();
+    let min = min.to_string();
+    let max = max.to_string();
+    let step = step.to_string();
+
+    let output = Command::new("kdialog")
+        .args([
+            "--title",
+            title,
+            "--ok-label",
+            ok_label,
+            "--cancel-label",
+            "Cancel",
+            "--default",
+            &initial_value,
+            "--slider",
+            prompt,
+            &min,
+            &max,
+            &step,
+        ])
+        .output()?;
+
+    match output.status.code() {
+        Some(0) => {
+            let minutes = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .parse::<u64>()
+                .map_err(|error| io::Error::other(format!("invalid slider value: {error}")))?;
+            Ok(Some(minutes))
+        }
         Some(1) => Ok(None),
         _ => Err(io::Error::other(
             String::from_utf8_lossy(&output.stderr).trim().to_string(),
