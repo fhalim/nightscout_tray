@@ -291,45 +291,49 @@ fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
 }
 
 fn open_settings_dialog(current: &AppConfig) -> io::Result<Option<AppConfig>> {
-    let nightscout_url = match prompt_input(
-        "NightScout Settings",
-        "NightScout URL",
-        &current.nightscout_url,
-    )? {
-        Some(value) => value,
-        None => return Ok(None),
-    };
+    let mut draft = toml::to_string_pretty(current)
+        .map_err(|error| io::Error::other(format!("toml serialization failed: {error}")))?;
 
-    let refresh_minutes = loop {
-        let Some(value) = prompt_input(
+    loop {
+        let Some(value) = prompt_text_input(
             "NightScout Settings",
-            "Refresh frequency in minutes",
-            &current.refresh_minutes.to_string(),
+            "Edit the NightScout URL and refresh frequency, then click Save.",
+            &draft,
         )?
         else {
             return Ok(None);
         };
 
-        match value.trim().parse::<u64>() {
-            Ok(minutes) if minutes > 0 => break minutes,
-            _ => {
+        draft = value;
+
+        match toml::from_str::<AppConfig>(&draft) {
+            Ok(config) if config.refresh_minutes > 0 => return Ok(Some(config.normalized())),
+            Ok(_) => {
                 show_error_dialog("Refresh frequency must be a whole number greater than 0.");
             }
+            Err(error) => {
+                let message = format!(
+                    "Settings must be valid TOML with `nightscout_url` and `refresh_minutes`: {error}"
+                );
+                show_error_dialog(&message);
+            }
         }
-    };
-
-    Ok(Some(
-        AppConfig {
-            nightscout_url,
-            refresh_minutes,
-        }
-        .normalized(),
-    ))
+    }
 }
 
-fn prompt_input(title: &str, prompt: &str, initial_value: &str) -> io::Result<Option<String>> {
+fn prompt_text_input(title: &str, prompt: &str, initial_value: &str) -> io::Result<Option<String>> {
     let output = Command::new("kdialog")
-        .args(["--title", title, "--inputbox", prompt, initial_value])
+        .args([
+            "--title",
+            title,
+            "--ok-label",
+            "Save",
+            "--cancel-label",
+            "Cancel",
+            "--textinputbox",
+            prompt,
+            initial_value,
+        ])
         .output()?;
 
     match output.status.code() {
