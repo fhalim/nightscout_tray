@@ -66,6 +66,7 @@ impl SharedState {
 enum AppCommand {
     OpenSettings,
     RefreshNow,
+    Quit,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -150,6 +151,7 @@ impl ksni::Tray for NightscoutTray {
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let settings_sender = self.command_sender.clone();
         let refresh_sender = self.command_sender.clone();
+        let quit_sender = self.command_sender.clone();
 
         vec![
             StandardItem {
@@ -190,6 +192,15 @@ impl ksni::Tray for NightscoutTray {
             StandardItem {
                 label: self.buffer_status_label(),
                 enabled: false,
+                ..Default::default()
+            }
+            .into(),
+            MenuItem::Separator,
+            StandardItem {
+                label: "Quit".to_string(),
+                activate: Box::new(move |_tray: &mut NightscoutTray| {
+                    let _ = quit_sender.send(AppCommand::Quit);
+                }),
                 ..Default::default()
             }
             .into(),
@@ -299,6 +310,10 @@ fn run_controller(
                 if refresh_from_nightscout(&handle, &config, &shared).is_none() {
                     break;
                 }
+            }
+            Ok(AppCommand::Quit) => {
+                handle.shutdown();
+                break;
             }
             Err(RecvTimeoutError::Timeout) => {
                 if refresh_from_nightscout(&handle, &config, &shared).is_none() {
