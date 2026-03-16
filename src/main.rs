@@ -22,6 +22,7 @@ const SAMPLE_READINGS: [u16; 6] = [110, 108, 112, 115, 109, 106];
 #[serde(default)]
 struct AppConfig {
     nightscout_url: String,
+    api_token: String,
     refresh_minutes: u64,
 }
 
@@ -29,6 +30,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             nightscout_url: String::new(),
+            api_token: String::new(),
             refresh_minutes: DEFAULT_REFRESH_MINUTES,
         }
     }
@@ -37,6 +39,7 @@ impl Default for AppConfig {
 impl AppConfig {
     fn normalized(mut self) -> Self {
         self.nightscout_url = self.nightscout_url.trim().to_string();
+        self.api_token = self.api_token.trim().to_string();
         self.refresh_minutes = self.refresh_minutes.max(1);
         self
     }
@@ -101,6 +104,14 @@ impl NightscoutTray {
             )
         }
     }
+
+    fn token_status_label(&self) -> String {
+        if self.config.api_token.is_empty() {
+            "API token: not configured".to_string()
+        } else {
+            "API token: configured".to_string()
+        }
+    }
 }
 
 impl ksni::Tray for NightscoutTray {
@@ -143,6 +154,12 @@ impl ksni::Tray for NightscoutTray {
             .into(),
             StandardItem {
                 label: format!("Refresh every {} min", self.config.refresh_minutes),
+                enabled: false,
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: self.token_status_label(),
                 enabled: false,
                 ..Default::default()
             }
@@ -297,7 +314,7 @@ fn open_settings_dialog(current: &AppConfig) -> io::Result<Option<AppConfig>> {
     loop {
         let Some(value) = prompt_text_input(
             "NightScout Settings",
-            "Edit the NightScout URL and refresh frequency, then click Save.",
+            "Edit the NightScout URL, API token, and refresh frequency, then click Save.",
             &draft,
         )?
         else {
@@ -313,7 +330,7 @@ fn open_settings_dialog(current: &AppConfig) -> io::Result<Option<AppConfig>> {
             }
             Err(error) => {
                 let message = format!(
-                    "Settings must be valid TOML with `nightscout_url` and `refresh_minutes`: {error}"
+                    "Settings must be valid TOML with `nightscout_url`, `api_token`, and `refresh_minutes`: {error}"
                 );
                 show_error_dialog(&message);
             }
