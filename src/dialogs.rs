@@ -4,15 +4,46 @@ use std::process::Command;
 use crate::config::AppConfig;
 
 pub fn open_settings_dialog(current: &AppConfig) -> io::Result<Option<AppConfig>> {
-    let Some(updated) = prompt_settings_form(current)? else {
+    let Some(nightscout_url) = prompt_input(
+        "NightScout Settings",
+        "NightScout URL",
+        &current.nightscout_url,
+        false,
+        "Next",
+    )?
+    else {
+        return Ok(None);
+    };
+
+    let Some(api_token) = prompt_input(
+        "NightScout Settings",
+        "API token",
+        &current.api_token,
+        true,
+        "Next",
+    )?
+    else {
+        return Ok(None);
+    };
+
+    let Some(refresh_minutes) = prompt_slider(
+        "NightScout Settings",
+        "Refresh frequency in minutes",
+        current.refresh_minutes,
+        1,
+        120,
+        1,
+        "Save",
+    )?
+    else {
         return Ok(None);
     };
 
     Ok(Some(
         AppConfig {
-            nightscout_url: updated.nightscout_url,
-            api_token: updated.api_token,
-            refresh_minutes: updated.refresh_minutes,
+            nightscout_url,
+            api_token,
+            refresh_minutes,
             launch_on_startup: current.launch_on_startup,
         }
         .normalized(),
@@ -25,29 +56,32 @@ pub fn show_error_dialog(message: &str) {
         .status();
 }
 
-#[derive(serde::Deserialize)]
-struct SettingsDialogResult {
-    nightscout_url: String,
-    api_token: String,
-    refresh_minutes: u64,
-}
+fn prompt_input(
+    title: &str,
+    prompt: &str,
+    initial_value: &str,
+    masked: bool,
+    ok_label: &str,
+) -> io::Result<Option<String>> {
+    let dialog_type = if masked { "--password" } else { "--inputbox" };
 
-fn prompt_settings_form(current: &AppConfig) -> io::Result<Option<SettingsDialogResult>> {
-    let output = Command::new("python3")
+    let output = Command::new("kdialog")
         .args([
-            "-c",
-            PYQT_SETTINGS_DIALOG,
-            &current.nightscout_url,
-            &current.api_token,
-            &current.refresh_minutes.to_string(),
+            "--title",
+            title,
+            "--ok-label",
+            ok_label,
+            "--cancel-label",
+            "Cancel",
+            dialog_type,
+            prompt,
+            initial_value,
         ])
         .output()?;
 
     match output.status.code() {
         Some(0) => Ok(Some(
-            serde_json::from_slice::<SettingsDialogResult>(&output.stdout).map_err(|error| {
-                io::Error::other(format!("invalid settings dialog response: {error}"))
-            })?,
+            String::from_utf8_lossy(&output.stdout).trim().to_string(),
         )),
         Some(1) => Ok(None),
         _ => Err(io::Error::other(
@@ -56,63 +90,50 @@ fn prompt_settings_form(current: &AppConfig) -> io::Result<Option<SettingsDialog
     }
 }
 
-const PYQT_SETTINGS_DIALOG: &str = r#"
-import json
-import sys
+fn prompt_slider(
+    title: &str,
+    prompt: &str,
+    initial_value: u64,
+    min: u64,
+    max: u64,
+    step: u64,
+    ok_label: &str,
+) -> io::Result<Option<u64>> {
+    let initial_value = initial_value.clamp(min, max);
+    let initial_value = initial_value.to_string();
+    let min = min.to_string();
+    let max = max.to_string();
+    let step = step.to_string();
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QApplication, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QVBoxLayout, QWidget
+    let output = Command::new("kdialog")
+        .args([
+            "--title",
+            title,
+            "--ok-label",
+            ok_label,
+            "--cancel-label",
+            "Cancel",
+            "--default",
+            &initial_value,
+            "--slider",
+            prompt,
+            &min,
+            &max,
+            &step,
+        ])
+        .output()?;
 
-
-class SettingsDialog(QDialog):
-    def __init__(self, url: str, token: str, refresh_minutes: int) -> None:
-        super().__init__()
-        self.setWindowTitle('NightScout Settings')
-        self.setMinimumWidth(420)
-
-        self.url_input = QLineEdit(url)
-        self.token_input = QLineEdit(token)
-        self.refresh_input = QSpinBox()
-        self.refresh_input.setRange(1, 120)
-        self.refresh_input.setValue(max(1, refresh_minutes))
-        self.refresh_input.setSuffix(' min')
-
-        form = QFormLayout()
-        form.addRow('NightScout URL', self.url_input)
-        form.addRow('API token', self.token_input)
-        form.addRow('Refresh frequency', self.refresh_input)
-
-        help_label = QLabel('These values are saved to the NightScout Tray config file.')
-        help_label.setWordWrap(True)
-        help_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-
-        layout = QVBoxLayout()
-        layout.addLayout(form)
-        layout.addWidget(help_label)
-        layout.addWidget(buttons)
-        self.setLayout(layout)
-
-    def result_payload(self) -> str:
-        return json.dumps({
-            'nightscout_url': self.url_input.text(),
-            'api_token': self.token_input.text(),
-            'refresh_minutes': self.refresh_input.value(),
-        })
-
-
-def main() -> int:
-    app = QApplication(sys.argv)
-    dialog = SettingsDialog(sys.argv[1], sys.argv[2], int(sys.argv[3]))
-    if dialog.exec_() == QDialog.Accepted:
-        print(dialog.result_payload())
-        return 0
-    return 1
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())
-"#;
+    match output.status.code() {
+        Some(0) => {
+            let minutes = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .parse::<u64>()
+                .map_err(|error| io::Error::other(format!("invalid slider value: {error}")))?;
+            Ok(Some(minutes))
+        }
+        Some(1) => Ok(None),
+        _ => Err(io::Error::other(
+            String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        )),
+    }
+}
