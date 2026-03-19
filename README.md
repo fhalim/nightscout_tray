@@ -47,6 +47,12 @@ nightscout_url = "http://localhost:1337"
 api_token = "mysecrettoken"
 refresh_minutes = 5
 launch_on_startup = false
+
+[thresholds]
+low_warn = 70
+low_critical = 50
+high_warn = 200
+high_critical = 300
 ```
 
 Build a release binary:

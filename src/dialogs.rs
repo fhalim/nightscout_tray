@@ -45,6 +45,7 @@ pub fn open_settings_dialog(current: &AppConfig) -> io::Result<Option<AppConfig>
             api_token,
             refresh_minutes,
             launch_on_startup: current.launch_on_startup,
+            thresholds: current.thresholds.clone(),
         }
         .normalized(),
     ))

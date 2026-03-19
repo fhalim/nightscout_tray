@@ -1,10 +1,9 @@
-pub fn numeric_icon(reading: u16) -> ksni::Icon {
+pub fn numeric_icon(reading: u16, digit_color: [u8; 4]) -> ksni::Icon {
     const SIZE: usize = 32;
     const DIGIT_WIDTH: usize = 3;
     const DIGIT_HEIGHT: usize = 5;
     const PADDING: usize = 1;
     const DIGIT_GAP: usize = 2;
-    const DIGIT_COLOR: [u8; 4] = [32, 122, 74, 255];
 
     let text = reading.to_string();
     let digit_count = text.len();
@@ -33,7 +32,7 @@ pub fn numeric_icon(reading: u16) -> ksni::Icon {
             offset_y,
             &digit_column_widths,
             &digit_row_heights,
-            DIGIT_COLOR,
+            digit_color,
         );
     }
 

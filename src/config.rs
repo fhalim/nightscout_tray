@@ -9,6 +9,38 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_REFRESH_MINUTES: u64 = 5;
 pub const DEFAULT_NIGHTSCOUT_URL: &str = "http://localhost:1337";
 pub const DEFAULT_API_TOKEN: &str = "mysecrettoken";
+pub const DEFAULT_LOW_WARN: u16 = 70;
+pub const DEFAULT_LOW_CRITICAL: u16 = 50;
+pub const DEFAULT_HIGH_WARN: u16 = 200;
+pub const DEFAULT_HIGH_CRITICAL: u16 = 300;
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(default)]
+pub struct GlucoseThresholds {
+    pub low_warn: u16,
+    pub low_critical: u16,
+    pub high_warn: u16,
+    pub high_critical: u16,
+}
+
+impl Default for GlucoseThresholds {
+    fn default() -> Self {
+        Self {
+            low_warn: DEFAULT_LOW_WARN,
+            low_critical: DEFAULT_LOW_CRITICAL,
+            high_warn: DEFAULT_HIGH_WARN,
+            high_critical: DEFAULT_HIGH_CRITICAL,
+        }
+    }
+}
+
+impl GlucoseThresholds {
+    pub fn normalized(mut self) -> Self {
+        self.low_warn = self.low_warn.max(self.low_critical);
+        self.high_warn = self.high_warn.min(self.high_critical);
+        self
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(default)]
@@ -17,6 +49,7 @@ pub struct AppConfig {
     pub api_token: String,
     pub refresh_minutes: u64,
     pub launch_on_startup: bool,
+    pub thresholds: GlucoseThresholds,
 }
 
 impl Default for AppConfig {
@@ -26,6 +59,7 @@ impl Default for AppConfig {
             api_token: DEFAULT_API_TOKEN.to_string(),
             refresh_minutes: DEFAULT_REFRESH_MINUTES,
             launch_on_startup: false,
+            thresholds: GlucoseThresholds::default(),
         }
     }
 }
@@ -35,6 +69,7 @@ impl AppConfig {
         self.nightscout_url = self.nightscout_url.trim().to_string();
         self.api_token = self.api_token.trim().to_string();
         self.refresh_minutes = self.refresh_minutes.max(1);
+        self.thresholds = self.thresholds.normalized();
         self
     }
 }
@@ -85,7 +120,9 @@ pub fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_config, AppConfig, DEFAULT_API_TOKEN, DEFAULT_NIGHTSCOUT_URL, DEFAULT_REFRESH_MINUTES,
+        parse_config, AppConfig, GlucoseThresholds, DEFAULT_API_TOKEN, DEFAULT_HIGH_CRITICAL,
+        DEFAULT_HIGH_WARN, DEFAULT_LOW_CRITICAL, DEFAULT_LOW_WARN, DEFAULT_NIGHTSCOUT_URL,
+        DEFAULT_REFRESH_MINUTES,
     };
 
     #[test]
@@ -96,6 +133,10 @@ mod tests {
         assert_eq!(config.api_token, DEFAULT_API_TOKEN);
         assert_eq!(config.refresh_minutes, DEFAULT_REFRESH_MINUTES);
         assert!(!config.launch_on_startup);
+        assert_eq!(config.thresholds.low_warn, DEFAULT_LOW_WARN);
+        assert_eq!(config.thresholds.low_critical, DEFAULT_LOW_CRITICAL);
+        assert_eq!(config.thresholds.high_warn, DEFAULT_HIGH_WARN);
+        assert_eq!(config.thresholds.high_critical, DEFAULT_HIGH_CRITICAL);
     }
 
     #[test]
@@ -106,6 +147,10 @@ nightscout_url = "  http://example.test  "
 api_token = "  secret-token  "
 refresh_minutes = 0
 launch_on_startup = true
+thresholds.low_warn = 75
+thresholds.low_critical = 55
+thresholds.high_warn = 190
+thresholds.high_critical = 275
 "#,
         )
         .expect("config should parse");
@@ -117,7 +162,31 @@ launch_on_startup = true
                 api_token: "secret-token".to_string(),
                 refresh_minutes: 1,
                 launch_on_startup: true,
+                thresholds: GlucoseThresholds {
+                    low_warn: 75,
+                    low_critical: 55,
+                    high_warn: 190,
+                    high_critical: 275,
+                },
             }
         );
+    }
+
+    #[test]
+    fn parse_config_normalizes_threshold_order() {
+        let config = parse_config(
+            r#"
+thresholds.low_warn = 40
+thresholds.low_critical = 50
+thresholds.high_warn = 350
+thresholds.high_critical = 300
+"#,
+        )
+        .expect("config should parse");
+
+        assert_eq!(config.thresholds.low_warn, 50);
+        assert_eq!(config.thresholds.low_critical, 50);
+        assert_eq!(config.thresholds.high_warn, 300);
+        assert_eq!(config.thresholds.high_critical, 300);
     }
 }

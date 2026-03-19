@@ -5,9 +5,13 @@ use std::sync::Mutex;
 
 use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, GlucoseThresholds};
 use crate::icon::numeric_icon;
 use crate::nightscout::CgmEntry;
+
+const NORMAL_COLOR: [u8; 4] = [32, 122, 74, 255];
+const WARNING_COLOR: [u8; 4] = [214, 155, 0, 255];
+const CRITICAL_COLOR: [u8; 4] = [196, 46, 46, 255];
 
 pub struct SharedState {
     refresh_minutes: AtomicU64,
@@ -150,6 +154,7 @@ impl NightscoutTray {
         vec![
             disabled_item(self.url_status_label()).into(),
             disabled_item(format!("Refresh every {} min", self.config.refresh_minutes)).into(),
+            disabled_item(self.threshold_status_label()).into(),
             disabled_item(self.token_status_label()).into(),
             disabled_item(self.shared.fetch_status_label()).into(),
             disabled_item(format!(
@@ -178,6 +183,21 @@ impl NightscoutTray {
             "API token: configured".to_string()
         }
     }
+
+    fn threshold_status_label(&self) -> String {
+        let thresholds = &self.config.thresholds;
+        format!(
+            "Thresholds L:{} / {} H:{} / {}",
+            thresholds.low_critical,
+            thresholds.low_warn,
+            thresholds.high_warn,
+            thresholds.high_critical
+        )
+    }
+
+    fn icon_color(&self) -> [u8; 4] {
+        color_for_reading(self.reading, &self.config.thresholds)
+    }
 }
 
 impl ksni::Tray for NightscoutTray {
@@ -190,13 +210,13 @@ impl ksni::Tray for NightscoutTray {
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        vec![numeric_icon(self.reading)]
+        vec![numeric_icon(self.reading, self.icon_color())]
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
             icon_name: String::new(),
-            icon_pixmap: vec![numeric_icon(self.reading)],
+            icon_pixmap: vec![numeric_icon(self.reading, self.icon_color())],
             title: format!("NightScout {}", self.reading),
             description: self.shared.tooltip_description(),
         }
@@ -285,4 +305,14 @@ fn summarize(value: &str, limit: usize) -> String {
         .collect::<String>();
     shortened.push_str("...");
     shortened
+}
+
+fn color_for_reading(reading: u16, thresholds: &GlucoseThresholds) -> [u8; 4] {
+    if reading < thresholds.low_critical || reading > thresholds.high_critical {
+        CRITICAL_COLOR
+    } else if reading < thresholds.low_warn || reading > thresholds.high_warn {
+        WARNING_COLOR
+    } else {
+        NORMAL_COLOR
+    }
 }
