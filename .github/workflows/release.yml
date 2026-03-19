@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: nightscout_tray
+  TARGET: x86_64-unknown-linux-gnu
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config dpkg-dev fakeroot
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+
+      - name: Compute artifact version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Build Debian package
+        run: |
+          mkdir -p dist
+          cargo deb --no-build --output "dist/${APP_NAME}-${{ steps.version.outputs.value }}-amd64.deb"
+
+      - name: Build tar.gz archive
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          ARCHIVE_ROOT="${APP_NAME}-${VERSION}-${TARGET}"
+          mkdir -p "dist/${ARCHIVE_ROOT}"
+          cp "target/release/${APP_NAME}" "dist/${ARCHIVE_ROOT}/"
+          cp README.md "dist/${ARCHIVE_ROOT}/"
+          cp packaging/linux/nightscout-tray.desktop "dist/${ARCHIVE_ROOT}/"
+          tar -C dist -czf "dist/${ARCHIVE_ROOT}.tar.gz" "${ARCHIVE_ROOT}"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-release-artifacts-${{ steps.version.outputs.value }}
+          path: |
+            dist/*.deb
+            dist/*.tar.gz
+
+      - name: Publish GitHub release assets
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.deb
+            dist/*.tar.gz

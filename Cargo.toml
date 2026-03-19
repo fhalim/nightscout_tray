@@ -1,7 +1,10 @@
 [package]
 name = "nightscout_tray"
 version = "0.1.0"
+authors = ["NightScout Tray contributors"]
+description = "KDE system tray app for NightScout glucose readings"
 edition = "2024"
+publish = false
 
 [dependencies]
 directories = "5"
@@ -17,3 +20,15 @@ lto = true
 opt-level = "z"
 panic = "abort"
 strip = true
+
+[package.metadata.deb]
+depends = "$auto, kdialog"
+priority = "optional"
+section = "utils"
+copyright = "2026 NightScout Tray contributors"
+extended-description = "NightScout Tray displays the latest NightScout SGV reading in the Linux system tray and provides KDE settings dialogs."
+assets = [
+    ["target/release/nightscout_tray", "usr/bin/nightscout_tray", "755"],
+    ["packaging/linux/nightscout-tray.desktop", "usr/share/applications/nightscout-tray.desktop", "644"],
+    ["README.md", "usr/share/doc/nightscout-tray/README.md", "644"],
+]
