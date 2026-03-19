@@ -2,35 +2,37 @@ pub fn numeric_icon(reading: u16) -> ksni::Icon {
     const SIZE: usize = 32;
     const DIGIT_WIDTH: usize = 3;
     const DIGIT_HEIGHT: usize = 5;
-    const DIGIT_SPACING: usize = 0;
     const PADDING: usize = 1;
+    const DIGIT_GAP: usize = 2;
     const DIGIT_COLOR: [u8; 4] = [32, 122, 74, 255];
 
     let text = reading.to_string();
     let digit_count = text.len();
-    let base_width = digit_count * DIGIT_WIDTH + digit_count.saturating_sub(1) * DIGIT_SPACING;
-    let available_width = SIZE.saturating_sub(PADDING * 2).max(1);
-    let available_height = SIZE.saturating_sub(PADDING * 2).max(1);
-    let scale_x = (available_width / base_width.max(1)).max(1);
-    let scale_y = (available_height / DIGIT_HEIGHT).max(1);
-    let text_width = digit_count * DIGIT_WIDTH * scale_x
-        + digit_count.saturating_sub(1) * DIGIT_SPACING * scale_x;
-    let text_height = DIGIT_HEIGHT * scale_y;
+    let total_gap_width = digit_count.saturating_sub(1) * DIGIT_GAP;
+    let available_width = SIZE
+        .saturating_sub(PADDING * 2 + total_gap_width)
+        .max(DIGIT_WIDTH);
+    let available_height = SIZE.saturating_sub(PADDING * 2).max(DIGIT_HEIGHT);
+    let digit_slot_width = (available_width / digit_count.max(1)).max(DIGIT_WIDTH);
+    let digit_column_widths = dimension_slices::<DIGIT_WIDTH>(digit_slot_width);
+    let digit_row_heights = dimension_slices::<DIGIT_HEIGHT>(available_height);
+    let text_width = digit_count * digit_slot_width + total_gap_width;
+    let text_height = digit_row_heights.iter().sum::<usize>();
     let offset_x = (SIZE - text_width) / 2;
     let offset_y = (SIZE - text_height) / 2;
 
     let mut rgba = vec![0_u8; SIZE * SIZE * 4];
 
     for (index, ch) in text.chars().enumerate() {
-        let digit_x = offset_x + index * (DIGIT_WIDTH + DIGIT_SPACING) * scale_x;
+        let digit_x = offset_x + index * (digit_slot_width + DIGIT_GAP);
         draw_digit(
             &mut rgba,
             SIZE,
             ch,
             digit_x,
             offset_y,
-            scale_x,
-            scale_y,
+            &digit_column_widths,
+            &digit_row_heights,
             DIGIT_COLOR,
         );
     }
@@ -67,29 +69,53 @@ fn draw_digit(
     ch: char,
     start_x: usize,
     start_y: usize,
-    scale_x: usize,
-    scale_y: usize,
+    column_widths: &[usize; 3],
+    row_heights: &[usize; 5],
     color: [u8; 4],
 ) {
     let Some(pattern) = digit_pattern(ch) else {
         return;
     };
 
+    let mut y = start_y;
     for (row, row_pattern) in pattern.iter().enumerate() {
+        let mut x = start_x;
         for (column, pixel) in row_pattern.chars().enumerate() {
             if pixel == '1' {
                 fill_rect(
                     rgba,
                     canvas_width,
-                    start_x + column * scale_x,
-                    start_y + row * scale_y,
-                    scale_x,
-                    scale_y,
+                    x,
+                    y,
+                    column_widths[column],
+                    row_heights[row],
                     color,
                 );
             }
+
+            x += column_widths[column];
         }
+
+        y += row_heights[row];
     }
+}
+
+fn dimension_slices<const COUNT: usize>(total: usize) -> [usize; COUNT] {
+    let base = total / COUNT;
+    let remainder = total % COUNT;
+    let middle = COUNT / 2;
+    let mut slices = [base; COUNT];
+
+    for offset in 0..remainder {
+        let index = if offset % 2 == 0 {
+            middle.saturating_sub(offset / 2)
+        } else {
+            (middle + 1 + offset / 2).min(COUNT - 1)
+        };
+        slices[index] += 1;
+    }
+
+    slices
 }
 
 fn digit_pattern(ch: char) -> Option<[&'static str; 5]> {
