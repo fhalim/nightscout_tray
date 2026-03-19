@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Version=1.0
-Name=NightScout Tray
-Comment=Show the latest NightScout CGM value in the KDE tray
-Exec=nightscout_tray
-Terminal=false
-Categories=Utility;
