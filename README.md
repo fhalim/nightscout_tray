@@ -69,6 +69,11 @@ cargo build --release
   - a `.tar.gz` archive containing the binary, desktop entry, and README
 - You can also trigger the workflow manually with `workflow_dispatch` to generate artifacts without creating a tagged release
 
+## CI Builds
+
+- `.github/workflows/build.yml` builds and tests the project on pushes to `master`, pull requests, and manual runs
+- The build workflow uploads a Linux `.tar.gz` artifact for each run so you can download a ready-to-test binary bundle from GitHub Actions
+
 ## Notes
 
 - Right now the app uses a simple controller thread and blocking requests.

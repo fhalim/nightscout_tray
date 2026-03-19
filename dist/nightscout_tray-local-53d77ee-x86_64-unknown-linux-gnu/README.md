@@ -47,6 +47,12 @@ nightscout_url = "http://localhost:1337"
 api_token = "mysecrettoken"
 refresh_minutes = 5
 launch_on_startup = false
+
+[thresholds]
+low_warn = 70
+low_critical = 50
+high_warn = 200
+high_critical = 300
 ```
 
 Build a release binary:
@@ -62,6 +68,11 @@ cargo build --release
   - a `.deb` package for Debian/Ubuntu-style systems
   - a `.tar.gz` archive containing the binary, desktop entry, and README
 - You can also trigger the workflow manually with `workflow_dispatch` to generate artifacts without creating a tagged release
+
+## CI Builds
+
+- `.github/workflows/build.yml` builds and tests the project on pushes to `master`, pull requests, and manual runs
+- The build workflow uploads a Linux `.tar.gz` artifact for each run so you can download a ready-to-test binary bundle from GitHub Actions
 
 ## Notes
 
