@@ -6,11 +6,11 @@ Small Rust KDE system tray application for showing the latest NightScout CGM rea
 
 - Rust toolchain with Cargo
 - KDE Plasma or another desktop that supports StatusNotifierItem tray icons
-- `kdialog` for the settings and error dialogs
 - Network access to a NightScout server
 
 Rust crate dependencies are declared in `Cargo.toml`:
 
+- `eframe` and `egui` for the settings and error windows
 - `ksni` for the tray icon and menu integration
 - `reqwest` for blocking HTTP requests to NightScout
 - `serde` and `toml` for configuration parsing and serialization
@@ -28,7 +28,7 @@ Rust crate dependencies are declared in `Cargo.toml`:
 - Stores up to the latest 10 NightScout entries in memory
 - Displays the `sgv` value from the first returned entry in the tray icon
 - Supports tray actions for refresh, settings, and quit
-- Opens the settings editor with `kdialog` and saves the edited TOML on success
+- Opens a small Rust-native settings window and saves the edited TOML on success
 
 ## Usage
 
