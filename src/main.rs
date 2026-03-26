@@ -18,20 +18,13 @@ use crate::config::{config_path, load_config};
 use crate::controller::run_controller;
 use crate::tray::{NightscoutTray, SharedState};
 
-const INITIAL_READING: u16 = 110;
-
 fn main() -> Result<(), Box<dyn Error>> {
     let config_path = config_path()?;
     let config = load_config(&config_path)?;
     let shared = Arc::new(SharedState::new(config.refresh_minutes));
     let (command_sender, command_receiver) = mpsc::channel();
 
-    let tray = NightscoutTray::new(
-        INITIAL_READING,
-        config.clone(),
-        Arc::clone(&shared),
-        command_sender,
-    );
+    let tray = NightscoutTray::new(config.clone(), Arc::clone(&shared), command_sender);
     let handle = tray.spawn()?;
 
     let controller_handle = handle.clone();

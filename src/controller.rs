@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
 
@@ -60,7 +60,7 @@ pub fn run_controller(
 
 fn handle_startup_toggle(
     handle: &ksni::blocking::Handle<NightscoutTray>,
-    config_path: &PathBuf,
+    config_path: &Path,
     config: &mut AppConfig,
 ) -> bool {
     let mut updated = config.clone();
@@ -92,7 +92,7 @@ fn handle_startup_toggle(
 
 fn handle_settings(
     handle: &ksni::blocking::Handle<NightscoutTray>,
-    config_path: &PathBuf,
+    config_path: &Path,
     config: &mut AppConfig,
     shared: &Arc<SharedState>,
 ) -> bool {
@@ -141,9 +141,9 @@ fn refresh_from_nightscout(
             shared.record_entries(entries);
 
             if let Some(reading) = reading {
-                handle.update(move |tray| tray.set_reading(reading))?;
+                handle.update(move |tray| tray.set_fresh_reading(reading))?;
             } else {
-                handle.update(|_tray| {})?;
+                handle.update(|tray| tray.show_unavailable())?;
             }
 
             Some(())
@@ -151,7 +151,7 @@ fn refresh_from_nightscout(
         Err(error) => {
             eprintln!("NightScout refresh failed: {error}");
             shared.record_error(error.to_string());
-            handle.update(|_tray| {})?;
+            handle.update(|tray| tray.mark_stale())?;
             Some(())
         }
     }

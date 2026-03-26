@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::time::Duration;
 
 use reqwest::blocking::Client;
 use serde::Deserialize;
@@ -6,6 +7,8 @@ use serde::Deserialize;
 use crate::config::AppConfig;
 
 pub const READINGS_BUFFER_SIZE: usize = 10;
+const CONNECT_TIMEOUT_SECONDS: u64 = 5;
+const REQUEST_TIMEOUT_SECONDS: u64 = 15;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct CgmEntry {
@@ -25,7 +28,10 @@ pub fn fetch_recent_entries(config: &AppConfig) -> Result<Vec<CgmEntry>, Box<dyn
         config.nightscout_url.trim_end_matches('/')
     );
 
-    let client = Client::builder().build()?;
+    let client = Client::builder()
+        .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECONDS))
+        .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
+        .build()?;
     let request = client.get(endpoint);
     let request = if config.api_token.is_empty() {
         request

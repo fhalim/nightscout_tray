@@ -93,13 +93,10 @@ pub fn load_config(path: &Path) -> Result<AppConfig, Box<dyn Error>> {
     match fs::read_to_string(path) {
         Ok(contents) => match parse_config(&contents) {
             Ok(config) => Ok(config),
-            Err(error) => {
-                eprintln!(
-                    "Could not parse {}: {error}. Falling back to defaults.",
-                    path.display()
-                );
-                Ok(AppConfig::default())
-            }
+            Err(error) => Err(Box::new(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("could not parse {}: {error}", path.display()),
+            ))),
         },
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(AppConfig::default()),
         Err(error) => Err(Box::new(error)),
@@ -120,9 +117,9 @@ pub fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_config, AppConfig, GlucoseThresholds, DEFAULT_API_TOKEN, DEFAULT_HIGH_CRITICAL,
-        DEFAULT_HIGH_WARN, DEFAULT_LOW_CRITICAL, DEFAULT_LOW_WARN, DEFAULT_NIGHTSCOUT_URL,
-        DEFAULT_REFRESH_MINUTES,
+        load_config, parse_config, AppConfig, GlucoseThresholds, DEFAULT_API_TOKEN,
+        DEFAULT_HIGH_CRITICAL, DEFAULT_HIGH_WARN, DEFAULT_LOW_CRITICAL, DEFAULT_LOW_WARN,
+        DEFAULT_NIGHTSCOUT_URL, DEFAULT_REFRESH_MINUTES,
     };
 
     #[test]
@@ -188,5 +185,19 @@ thresholds.high_critical = 300
         assert_eq!(config.thresholds.low_critical, 50);
         assert_eq!(config.thresholds.high_warn, 300);
         assert_eq!(config.thresholds.high_critical, 300);
+    }
+
+    #[test]
+    fn load_config_returns_error_for_invalid_toml() {
+        let path = std::env::temp_dir().join(format!(
+            "nightscout-tray-invalid-config-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(&path, "nightscout_url = [").expect("temp config should be written");
+
+        let error = load_config(&path).expect_err("invalid config should fail to load");
+        let _ = std::fs::remove_file(&path);
+
+        assert!(error.to_string().contains("could not parse"));
     }
 }

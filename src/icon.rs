@@ -1,11 +1,10 @@
-pub fn numeric_icon(reading: u16, digit_color: [u8; 4]) -> ksni::Icon {
+pub fn text_icon(text: &str, glyph_color: [u8; 4]) -> ksni::Icon {
     const SIZE: usize = 32;
     const DIGIT_WIDTH: usize = 3;
     const DIGIT_HEIGHT: usize = 5;
     const PADDING: usize = 1;
     const DIGIT_GAP: usize = 2;
 
-    let text = reading.to_string();
     let digit_count = text.len();
     let total_gap_width = digit_count.saturating_sub(1) * DIGIT_GAP;
     let available_width = SIZE
@@ -26,13 +25,15 @@ pub fn numeric_icon(reading: u16, digit_color: [u8; 4]) -> ksni::Icon {
         let digit_x = offset_x + index * (digit_slot_width + DIGIT_GAP);
         draw_digit(
             &mut rgba,
-            SIZE,
             ch,
-            digit_x,
-            offset_y,
-            &digit_column_widths,
-            &digit_row_heights,
-            digit_color,
+            GlyphLayout {
+                canvas_width: SIZE,
+                start_x: digit_x,
+                start_y: offset_y,
+                column_widths: &digit_column_widths,
+                row_heights: &digit_row_heights,
+                color: glyph_color,
+            },
         );
     }
 
@@ -62,40 +63,40 @@ fn fill_rect(
     }
 }
 
-fn draw_digit(
-    rgba: &mut [u8],
+struct GlyphLayout<'a> {
     canvas_width: usize,
-    ch: char,
     start_x: usize,
     start_y: usize,
-    column_widths: &[usize; 3],
-    row_heights: &[usize; 5],
+    column_widths: &'a [usize; 3],
+    row_heights: &'a [usize; 5],
     color: [u8; 4],
-) {
+}
+
+fn draw_digit(rgba: &mut [u8], ch: char, layout: GlyphLayout<'_>) {
     let Some(pattern) = digit_pattern(ch) else {
         return;
     };
 
-    let mut y = start_y;
+    let mut y = layout.start_y;
     for (row, row_pattern) in pattern.iter().enumerate() {
-        let mut x = start_x;
+        let mut x = layout.start_x;
         for (column, pixel) in row_pattern.chars().enumerate() {
             if pixel == '1' {
                 fill_rect(
                     rgba,
-                    canvas_width,
+                    layout.canvas_width,
                     x,
                     y,
-                    column_widths[column],
-                    row_heights[row],
-                    color,
+                    layout.column_widths[column],
+                    layout.row_heights[row],
+                    layout.color,
                 );
             }
 
-            x += column_widths[column];
+            x += layout.column_widths[column];
         }
 
-        y += row_heights[row];
+        y += layout.row_heights[row];
     }
 }
 
@@ -129,6 +130,7 @@ fn digit_pattern(ch: char) -> Option<[&'static str; 5]> {
         '7' => Some(["111", "001", "001", "001", "001"]),
         '8' => Some(["111", "101", "111", "101", "111"]),
         '9' => Some(["111", "101", "111", "001", "111"]),
+        '-' => Some(["000", "000", "111", "000", "000"]),
         _ => None,
     }
 }

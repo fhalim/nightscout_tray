@@ -6,12 +6,40 @@ use std::sync::Mutex;
 use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
 
 use crate::config::{AppConfig, GlucoseThresholds};
-use crate::icon::numeric_icon;
+use crate::icon::text_icon;
 use crate::nightscout::CgmEntry;
 
 const NORMAL_COLOR: [u8; 4] = [32, 122, 74, 255];
 const WARNING_COLOR: [u8; 4] = [214, 155, 0, 255];
 const CRITICAL_COLOR: [u8; 4] = [196, 46, 46, 255];
+const INACTIVE_COLOR: [u8; 4] = [104, 112, 122, 255];
+
+#[derive(Clone, Debug)]
+enum ReadingState {
+    Loading,
+    Fresh(u16),
+    Stale(Option<u16>),
+    Unavailable,
+}
+
+impl ReadingState {
+    fn icon_text(&self) -> String {
+        match self {
+            Self::Loading | Self::Unavailable | Self::Stale(None) => "--".to_string(),
+            Self::Fresh(reading) | Self::Stale(Some(reading)) => reading.to_string(),
+        }
+    }
+
+    fn title(&self) -> String {
+        match self {
+            Self::Loading => "NightScout loading".to_string(),
+            Self::Fresh(reading) => format!("NightScout {reading}"),
+            Self::Stale(Some(reading)) => format!("NightScout {reading} (stale)"),
+            Self::Stale(None) => "NightScout unavailable (stale)".to_string(),
+            Self::Unavailable => "NightScout unavailable".to_string(),
+        }
+    }
+}
 
 pub struct SharedState {
     refresh_minutes: AtomicU64,
@@ -121,7 +149,7 @@ pub enum AppCommand {
 }
 
 pub struct NightscoutTray {
-    reading: u16,
+    reading_state: ReadingState,
     config: AppConfig,
     shared: Arc<SharedState>,
     command_sender: Sender<AppCommand>,
@@ -129,21 +157,32 @@ pub struct NightscoutTray {
 
 impl NightscoutTray {
     pub fn new(
-        reading: u16,
         config: AppConfig,
         shared: Arc<SharedState>,
         command_sender: Sender<AppCommand>,
     ) -> Self {
         Self {
-            reading,
+            reading_state: ReadingState::Loading,
             config,
             shared,
             command_sender,
         }
     }
 
-    pub fn set_reading(&mut self, reading: u16) {
-        self.reading = reading;
+    pub fn set_fresh_reading(&mut self, reading: u16) {
+        self.reading_state = ReadingState::Fresh(reading);
+    }
+
+    pub fn mark_stale(&mut self) {
+        self.reading_state = match self.reading_state {
+            ReadingState::Fresh(reading) => ReadingState::Stale(Some(reading)),
+            ReadingState::Stale(reading) => ReadingState::Stale(reading),
+            ReadingState::Loading | ReadingState::Unavailable => ReadingState::Stale(None),
+        };
+    }
+
+    pub fn show_unavailable(&mut self) {
+        self.reading_state = ReadingState::Unavailable;
     }
 
     pub fn apply_config(&mut self, config: AppConfig) {
@@ -196,7 +235,12 @@ impl NightscoutTray {
     }
 
     fn icon_color(&self) -> [u8; 4] {
-        color_for_reading(self.reading, &self.config.thresholds)
+        match self.reading_state {
+            ReadingState::Fresh(reading) => color_for_reading(reading, &self.config.thresholds),
+            ReadingState::Loading | ReadingState::Stale(_) | ReadingState::Unavailable => {
+                INACTIVE_COLOR
+            }
+        }
     }
 }
 
@@ -206,18 +250,24 @@ impl ksni::Tray for NightscoutTray {
     }
 
     fn title(&self) -> String {
-        format!("NightScout {}", self.reading)
+        self.reading_state.title()
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
-        vec![numeric_icon(self.reading, self.icon_color())]
+        vec![text_icon(
+            &self.reading_state.icon_text(),
+            self.icon_color(),
+        )]
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
             icon_name: String::new(),
-            icon_pixmap: vec![numeric_icon(self.reading, self.icon_color())],
-            title: format!("NightScout {}", self.reading),
+            icon_pixmap: vec![text_icon(
+                &self.reading_state.icon_text(),
+                self.icon_color(),
+            )],
+            title: self.reading_state.title(),
             description: self.shared.tooltip_description(),
         }
     }
