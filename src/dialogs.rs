@@ -45,13 +45,23 @@ pub fn show_error_dialog(message: &str) {
 }
 
 fn dialog_options(size: [f32; 2]) -> eframe::NativeOptions {
-    eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(size)
             .with_min_inner_size(size)
             .with_resizable(false),
         ..Default::default()
+    };
+
+    #[cfg(target_os = "linux")]
+    {
+        options.event_loop_builder = Some(Box::new(|builder| {
+            winit::platform::wayland::EventLoopBuilderExtWayland::with_any_thread(builder, true);
+            winit::platform::x11::EventLoopBuilderExtX11::with_any_thread(builder, true);
+        }));
     }
+
+    options
 }
 
 struct SettingsApp {
