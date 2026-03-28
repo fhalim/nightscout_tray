@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
+use std::sync::mpsc::{self, RecvTimeoutError};
 
 use crate::autostart::sync_autostart;
-use crate::config::{save_config, AppConfig};
-use crate::dialogs::{open_settings_dialog, show_error_dialog};
+use crate::config::{AppConfig, save_config};
+use crate::dialogs::{open_settings_dialog, show_error_dialog, toggle_chart_dialog};
 use crate::nightscout::fetch_recent_entries;
 use crate::tray::{AppCommand, NightscoutTray, SharedState};
 
@@ -42,6 +42,9 @@ pub fn run_controller(
                 if refresh_from_nightscout(&handle, &config, &shared).is_none() {
                     break;
                 }
+            }
+            Ok(AppCommand::ToggleChart) => {
+                handle_toggle_chart(&config, &shared);
             }
             Ok(AppCommand::ToggleLaunchOnStartup) => {
                 if !handle_startup_toggle(&handle, &config_path, &mut config) {
@@ -137,6 +140,14 @@ fn handle_settings(
 fn handle_open_website(config: &AppConfig) {
     if let Err(error) = open_nightscout_website(config) {
         let message = format!("Could not open NightScout website: {error}");
+        eprintln!("{message}");
+        show_error_dialog(&message);
+    }
+}
+
+fn handle_toggle_chart(config: &AppConfig, shared: &Arc<SharedState>) {
+    if let Err(error) = toggle_chart_dialog(shared.snapshot_entries(), config.thresholds.clone()) {
+        let message = format!("Could not open NightScout chart: {error}");
         eprintln!("{message}");
         show_error_dialog(&message);
     }

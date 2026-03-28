@@ -93,6 +93,13 @@ impl SharedState {
             .and_then(|entries| entries.first().cloned())
     }
 
+    pub fn snapshot_entries(&self) -> Vec<CgmEntry> {
+        self.recent_entries
+            .lock()
+            .map(|entries| entries.clone())
+            .unwrap_or_default()
+    }
+
     fn buffered_entry_count(&self) -> usize {
         self.recent_entries
             .lock()
@@ -145,6 +152,7 @@ pub enum AppCommand {
     OpenWebsite,
     OpenSettings,
     RefreshNow,
+    ToggleChart,
     ToggleLaunchOnStartup,
     Quit,
 }
@@ -316,7 +324,7 @@ impl ksni::Tray for NightscoutTray {
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
-        let _ = self.command_sender.send(AppCommand::RefreshNow);
+        let _ = self.command_sender.send(AppCommand::ToggleChart);
     }
 }
 
@@ -365,7 +373,7 @@ fn summarize(value: &str, limit: usize) -> String {
     shortened
 }
 
-fn color_for_reading(reading: u16, thresholds: &GlucoseThresholds) -> [u8; 4] {
+pub(crate) fn color_for_reading(reading: u16, thresholds: &GlucoseThresholds) -> [u8; 4] {
     if reading < thresholds.low_critical || reading > thresholds.high_critical {
         CRITICAL_COLOR
     } else if reading < thresholds.low_warn || reading > thresholds.high_warn {
