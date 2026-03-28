@@ -115,7 +115,7 @@ fn dialog_options(size: [f32; 2]) -> eframe::NativeOptions {
 }
 
 fn chart_options() -> eframe::NativeOptions {
-    let mut options = dialog_options([560.0, 360.0]);
+    let mut options = dialog_options([560.0, 400.0]);
     options.viewport = options.viewport.with_always_on_top();
     options
 }
@@ -289,8 +289,8 @@ impl eframe::App for ChartApp {
 }
 
 fn draw_chart(ui: &mut egui::Ui, entries: &[CgmEntry], thresholds: &GlucoseThresholds) {
-    let desired_size = egui::vec2(ui.available_width().max(320.0), 240.0);
-    let (rect, _) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
+    let desired_size = egui::vec2(ui.available_width().max(320.0), 270.0);
+    let (rect, response) = ui.allocate_exact_size(desired_size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
 
     painter.rect_stroke(
@@ -366,6 +366,35 @@ fn draw_chart(ui: &mut egui::Ui, entries: &[CgmEntry], thresholds: &GlucoseThres
         painter.circle_filled(point, 3.5, color32_for_reading(entry.sgv, thresholds));
     }
 
+    if let Some(pointer) = response.hover_pos() {
+        let nearest = points
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (entry, to_screen(index, entry.sgv)))
+            .map(|(entry, point)| (entry, point, point.distance(pointer)))
+            .filter(|(_, _, distance)| *distance <= 10.0)
+            .min_by(|left, right| left.2.total_cmp(&right.2));
+
+        if let Some((entry, _, _)) = nearest {
+            egui::Tooltip::always_open(
+                ui.ctx().clone(),
+                ui.layer_id(),
+                egui::Id::new("nightscout-chart-tooltip"),
+                egui::PopupAnchor::Pointer,
+            )
+            .gap(12.0)
+            .show(|ui| {
+                ui.label(format!("SGV: {} mg/dL", entry.sgv));
+                ui.label(
+                    entry
+                        .date_string
+                        .as_deref()
+                        .unwrap_or("Timestamp unavailable"),
+                );
+            });
+        }
+    }
+
     let label_color = egui::Color32::from_gray(180);
     painter.text(
         egui::pos2(plot.left(), plot.top()),
@@ -382,14 +411,14 @@ fn draw_chart(ui: &mut egui::Ui, entries: &[CgmEntry], thresholds: &GlucoseThres
         label_color,
     );
     painter.text(
-        egui::pos2(plot.left(), plot.bottom() + 6.0),
+        egui::pos2(plot.left(), plot.bottom() + 10.0),
         egui::Align2::LEFT_TOP,
         "Oldest",
         egui::FontId::monospace(11.0),
         label_color,
     );
     painter.text(
-        egui::pos2(plot.right(), plot.bottom() + 6.0),
+        egui::pos2(plot.right(), plot.bottom() + 10.0),
         egui::Align2::RIGHT_TOP,
         "Newest",
         egui::FontId::monospace(11.0),
