@@ -246,9 +246,19 @@ impl ChartApp {
         }
     }
 
+    fn close(&self, ctx: &egui::Context) {
+        if let Some(state) = CHART_DIALOG.get()
+            && let Ok(mut active) = state.lock()
+        {
+            *active = None;
+        }
+
+        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+
     fn poll_commands(&self, ctx: &egui::Context) {
         if matches!(self.receiver.try_recv(), Ok(ChartCommand::Close)) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.close(ctx);
             return;
         }
 
@@ -282,7 +292,7 @@ impl eframe::App for ChartApp {
 
             ui.add_space(12.0);
             if ui.button("Close").clicked() {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                self.close(ctx);
             }
         });
     }
