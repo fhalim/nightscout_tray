@@ -142,6 +142,7 @@ impl SharedState {
 }
 
 pub enum AppCommand {
+    OpenWebsite,
     OpenSettings,
     RefreshNow,
     ToggleLaunchOnStartup,
@@ -273,6 +274,7 @@ impl ksni::Tray for NightscoutTray {
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
+        let website_sender = self.command_sender.clone();
         let settings_sender = self.command_sender.clone();
         let refresh_sender = self.command_sender.clone();
         let startup_sender = self.command_sender.clone();
@@ -280,6 +282,10 @@ impl ksni::Tray for NightscoutTray {
         let mut items = vec![
             action_item("Refresh now", move || {
                 let _ = refresh_sender.send(AppCommand::RefreshNow);
+            })
+            .into(),
+            action_item("Open NightScout", move || {
+                let _ = website_sender.send(AppCommand::OpenWebsite);
             })
             .into(),
             action_item("Settings...", move || {

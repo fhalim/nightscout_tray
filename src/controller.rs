@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Arc;
 
@@ -33,6 +34,9 @@ pub fn run_controller(
                 if !handle_settings(&handle, &config_path, &mut config, &shared) {
                     break;
                 }
+            }
+            Ok(AppCommand::OpenWebsite) => {
+                handle_open_website(&config);
             }
             Ok(AppCommand::RefreshNow) => {
                 if refresh_from_nightscout(&handle, &config, &shared).is_none() {
@@ -130,6 +134,55 @@ fn handle_settings(
     }
 }
 
+fn handle_open_website(config: &AppConfig) {
+    if let Err(error) = open_nightscout_website(config) {
+        let message = format!("Could not open NightScout website: {error}");
+        eprintln!("{message}");
+        show_error_dialog(&message);
+    }
+}
+
+fn open_nightscout_website(config: &AppConfig) -> Result<(), std::io::Error> {
+    let url = nightscout_website_url(config)?;
+    Command::new("xdg-open").arg(url.as_str()).spawn()?;
+    Ok(())
+}
+
+fn nightscout_website_url(config: &AppConfig) -> Result<reqwest::Url, std::io::Error> {
+    if config.nightscout_url.is_empty() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "NightScout URL is not configured",
+        ));
+    }
+
+    let mut url = reqwest::Url::parse(&config.nightscout_url).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("invalid NightScout URL: {error}"),
+        )
+    })?;
+
+    if config.api_token.is_empty() {
+        return Ok(url);
+    }
+
+    let existing_pairs = url
+        .query_pairs()
+        .into_owned()
+        .filter(|(key, _)| key != "token")
+        .collect::<Vec<_>>();
+
+    {
+        let mut pairs = url.query_pairs_mut();
+        pairs.clear();
+        pairs.extend_pairs(existing_pairs.iter().map(|(key, value)| (&**key, &**value)));
+        pairs.append_pair("token", &config.api_token);
+    }
+
+    Ok(url)
+}
+
 fn refresh_from_nightscout(
     handle: &ksni::blocking::Handle<NightscoutTray>,
     config: &AppConfig,
@@ -154,5 +207,40 @@ fn refresh_from_nightscout(
             handle.update(|tray| tray.mark_stale())?;
             Some(())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::nightscout_website_url;
+    use crate::config::{AppConfig, GlucoseThresholds};
+
+    fn config(url: &str, token: &str) -> AppConfig {
+        AppConfig {
+            nightscout_url: url.to_string(),
+            api_token: token.to_string(),
+            refresh_minutes: 5,
+            launch_on_startup: false,
+            thresholds: GlucoseThresholds::default(),
+        }
+    }
+
+    #[test]
+    fn website_url_appends_token_query_parameter() {
+        let url = nightscout_website_url(&config("https://example.test", "secret token"))
+            .expect("url should build");
+
+        assert_eq!(url.as_str(), "https://example.test/?token=secret+token");
+    }
+
+    #[test]
+    fn website_url_replaces_existing_token_query_parameter() {
+        let url = nightscout_website_url(&config(
+            "https://example.test/view?foo=bar&token=old",
+            "new",
+        ))
+        .expect("url should build");
+
+        assert_eq!(url.as_str(), "https://example.test/view?foo=bar&token=new");
     }
 }
