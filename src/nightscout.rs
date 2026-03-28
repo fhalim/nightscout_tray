@@ -51,7 +51,7 @@ pub fn parse_entries(body: &str) -> Result<Vec<CgmEntry>, serde_json::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_entries, READINGS_BUFFER_SIZE};
+    use super::{READINGS_BUFFER_SIZE, parse_entries};
 
     #[test]
     fn parse_entries_reads_latest_cgm_fields() {

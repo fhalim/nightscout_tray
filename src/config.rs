@@ -117,9 +117,9 @@ pub fn save_config(path: &Path, config: &AppConfig) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        load_config, parse_config, AppConfig, GlucoseThresholds, DEFAULT_API_TOKEN,
-        DEFAULT_HIGH_CRITICAL, DEFAULT_HIGH_WARN, DEFAULT_LOW_CRITICAL, DEFAULT_LOW_WARN,
-        DEFAULT_NIGHTSCOUT_URL, DEFAULT_REFRESH_MINUTES,
+        AppConfig, DEFAULT_API_TOKEN, DEFAULT_HIGH_CRITICAL, DEFAULT_HIGH_WARN,
+        DEFAULT_LOW_CRITICAL, DEFAULT_LOW_WARN, DEFAULT_NIGHTSCOUT_URL, DEFAULT_REFRESH_MINUTES,
+        GlucoseThresholds, load_config, parse_config,
     };
 
     #[test]
