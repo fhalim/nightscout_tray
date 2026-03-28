@@ -1,7 +1,7 @@
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 
 use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
 
@@ -192,7 +192,13 @@ impl NightscoutTray {
 
     fn status_items(&self) -> Vec<MenuItem<Self>> {
         vec![
-            disabled_item(self.url_status_label()).into(),
+            action_item(self.url_status_label(), {
+                let sender = self.command_sender.clone();
+                move || {
+                    let _ = sender.send(AppCommand::OpenWebsite);
+                }
+            })
+            .into(),
             disabled_item(format!("Refresh every {} min", self.config.refresh_minutes)).into(),
             disabled_item(self.threshold_status_label()).into(),
             disabled_item(self.token_status_label()).into(),
@@ -274,7 +280,6 @@ impl ksni::Tray for NightscoutTray {
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
-        let website_sender = self.command_sender.clone();
         let settings_sender = self.command_sender.clone();
         let refresh_sender = self.command_sender.clone();
         let startup_sender = self.command_sender.clone();
@@ -282,10 +287,6 @@ impl ksni::Tray for NightscoutTray {
         let mut items = vec![
             action_item("Refresh now", move || {
                 let _ = refresh_sender.send(AppCommand::RefreshNow);
-            })
-            .into(),
-            action_item("Open NightScout", move || {
-                let _ = website_sender.send(AppCommand::OpenWebsite);
             })
             .into(),
             action_item("Settings...", move || {
@@ -319,12 +320,13 @@ impl ksni::Tray for NightscoutTray {
     }
 }
 
-fn action_item<F>(label: &str, action: F) -> StandardItem<NightscoutTray>
+fn action_item<F, S>(label: S, action: F) -> StandardItem<NightscoutTray>
 where
     F: Fn() + Send + 'static,
+    S: Into<String>,
 {
     StandardItem {
-        label: label.to_string(),
+        label: label.into(),
         activate: Box::new(move |_tray: &mut NightscoutTray| action()),
         ..Default::default()
     }
