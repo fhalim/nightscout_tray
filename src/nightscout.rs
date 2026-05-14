@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::config::AppConfig;
 
-pub const READINGS_BUFFER_SIZE: usize = 10;
+pub const READINGS_BUFFER_SIZE: usize = 48;
 const CONNECT_TIMEOUT_SECONDS: u64 = 5;
 const REQUEST_TIMEOUT_SECONDS: u64 = 15;
 
@@ -32,7 +32,9 @@ pub fn fetch_recent_entries(config: &AppConfig) -> Result<Vec<CgmEntry>, Box<dyn
         .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECONDS))
         .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECONDS))
         .build()?;
-    let request = client.get(endpoint);
+    let request = client
+        .get(endpoint)
+        .query(&[("count", READINGS_BUFFER_SIZE.to_string().as_str())]);
     let request = if config.api_token.is_empty() {
         request
     } else {
@@ -76,10 +78,11 @@ mod tests {
     }
 
     #[test]
-    fn parse_entries_keeps_only_latest_ten() {
+    fn parse_entries_truncates_to_buffer_size() {
+        let entry_count = READINGS_BUFFER_SIZE + 5;
         let body = format!(
             "[{}]",
-            (0..12)
+            (0..entry_count)
                 .map(|index| format!(r#"{{"sgv": {}}}"#, 100 + index))
                 .collect::<Vec<_>>()
                 .join(",")
@@ -89,6 +92,6 @@ mod tests {
 
         assert_eq!(entries.len(), READINGS_BUFFER_SIZE);
         assert_eq!(entries[0].sgv, 100);
-        assert_eq!(entries[READINGS_BUFFER_SIZE - 1].sgv, 109);
+        assert_eq!(entries[READINGS_BUFFER_SIZE - 1].sgv, (100 + READINGS_BUFFER_SIZE - 1) as u16);
     }
 }

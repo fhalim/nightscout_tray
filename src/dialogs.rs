@@ -115,8 +115,21 @@ fn dialog_options(size: [f32; 2]) -> eframe::NativeOptions {
 }
 
 fn chart_options() -> eframe::NativeOptions {
-    let mut options = dialog_options([560.0, 400.0]);
-    options.viewport = options.viewport.with_always_on_top();
+    let mut options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([560.0, 400.0])
+            .with_min_inner_size([400.0, 300.0]),
+        ..Default::default()
+    };
+
+    #[cfg(target_os = "linux")]
+    {
+        options.event_loop_builder = Some(Box::new(|builder| {
+            winit::platform::wayland::EventLoopBuilderExtWayland::with_any_thread(builder, true);
+            winit::platform::x11::EventLoopBuilderExtX11::with_any_thread(builder, true);
+        }));
+    }
+
     options
 }
 
@@ -281,7 +294,7 @@ impl eframe::App for ChartApp {
         self.poll_commands(ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Buffered NightScout Data");
+            ui.heading(format!("Last {} readings", self.entries.len()));
             ui.add_space(8.0);
 
             if self.entries.is_empty() {
