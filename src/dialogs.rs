@@ -61,12 +61,10 @@ pub fn toggle_chart_dialog(
         .map_err(|_| io::Error::other("chart dialog state is unavailable"))?;
 
     if let Some(sender) = active.as_ref() {
-        if sender.send(ChartCommand::Close).is_ok() {
-            return Ok(());
-        }
-
-        *active = None;
+        let _ = sender.send(ChartCommand::Close);
     }
+
+    *active = None;
 
     let (sender, receiver) = mpsc::channel();
     *active = Some(sender);
@@ -103,11 +101,20 @@ fn dialog_options(size: [f32; 2]) -> eframe::NativeOptions {
         ..Default::default()
     };
 
+    // Dialogs run on their own background thread, but winit only allows an
+    // event loop to be created off the main thread when explicitly opted in.
     #[cfg(target_os = "linux")]
     {
         options.event_loop_builder = Some(Box::new(|builder| {
             winit::platform::wayland::EventLoopBuilderExtWayland::with_any_thread(builder, true);
             winit::platform::x11::EventLoopBuilderExtX11::with_any_thread(builder, true);
+        }));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        options.event_loop_builder = Some(Box::new(|builder| {
+            winit::platform::windows::EventLoopBuilderExtWindows::with_any_thread(builder, true);
         }));
     }
 
