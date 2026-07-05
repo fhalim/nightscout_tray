@@ -1,25 +1,28 @@
 # NightScout Tray
 
-Small Rust KDE system tray application for showing the latest NightScout CGM reading as a numeric tray icon.
+Small Rust system tray application for showing the latest NightScout CGM reading as a numeric tray icon. Runs on Linux (KDE Plasma or another desktop that supports StatusNotifierItem tray icons) and on Windows.
 
 ## Dependencies
 
 - Rust toolchain with Cargo
-- KDE Plasma or another desktop that supports StatusNotifierItem tray icons
+- On Linux: KDE Plasma or another desktop that supports StatusNotifierItem tray icons
+- On Windows: no extra runtime dependencies beyond the OS itself
 - Network access to a NightScout server
 
 Rust crate dependencies are declared in `Cargo.toml`:
 
 - `eframe` and `egui` for the settings and error windows
-- `ksni` for the tray icon and menu integration
+- `ksni` for the tray icon and menu integration on Linux
+- `tray-icon` and `windows-sys` for the tray icon and menu integration on Windows
 - `reqwest` for blocking HTTP requests to NightScout
 - `serde` and `toml` for configuration parsing and serialization
-- `directories` for resolving the XDG config location
+- `directories` for resolving the per-OS config location
+- `winreg` for the Windows "launch on startup" registry entry
 
 ## Behavior
 
 - Starts in the system tray and renders the current glucose value directly into the tray icon
-- Loads configuration from the XDG config path `~/.config/nightscout_tray/config.toml`
+- Loads configuration from the platform config path (`~/.config/nightscout_tray/config.toml` on Linux, `%APPDATA%\nightscout_tray\config\config.toml` on Windows)
 - If no config exists yet, defaults to:
   - `nightscout_url = "http://localhost:1337"`
   - `api_token = "mysecrettoken"`
@@ -40,7 +43,9 @@ cargo run
 
 Open the tray menu and choose `Settings...` to edit the config.
 
-The saved config file at `~/.config/nightscout_tray/config.toml` looks like:
+Toggling "Launch on startup" writes an XDG autostart `.desktop` entry on Linux, or a `HKEY_CURRENT_USER\...\Run` registry value on Windows.
+
+The saved config file (`~/.config/nightscout_tray/config.toml` on Linux, `%APPDATA%\nightscout_tray\config\config.toml` on Windows) looks like:
 
 ```toml
 nightscout_url = "http://localhost:1337"
@@ -63,16 +68,20 @@ cargo build --release
 
 ## Releases
 
-- GitHub Actions builds Linux release artifacts on tag pushes like `v0.1.0`
+- GitHub Actions builds release artifacts for Linux and Windows on tag pushes like `v0.1.0`
 - The release workflow publishes:
-  - a `.deb` package for Debian/Ubuntu-style systems
-  - a `.tar.gz` archive containing the binary, desktop entry, and README
+  - Linux: `.deb` package for Debian/Ubuntu-style systems
+  - Linux: `.tar.gz` archive containing the binary, desktop entry, and README
+  - Windows: `.zip` archive containing the executable and README
 - You can also trigger the workflow manually with `workflow_dispatch` to generate artifacts without creating a tagged release
 
 ## CI Builds
 
 - `.github/workflows/build.yml` builds and tests the project on pushes to `master`, pull requests, and manual runs
-- The build workflow uploads a Linux `.tar.gz` artifact for each run so you can download a ready-to-test binary bundle from GitHub Actions
+- The build workflow tests on both Linux (Ubuntu) and Windows platforms:
+  - Linux: uploads `.tar.gz` artifact
+  - Windows: uploads `.zip` artifact
+- Download ready-to-test binary bundles from the GitHub Actions run artifacts
 
 ## Notes
 
