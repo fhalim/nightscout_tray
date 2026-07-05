@@ -11,11 +11,14 @@ permissions:
 
 env:
   APP_NAME: nightscout_tray
-  TARGET: x86_64-unknown-linux-gnu
 
 jobs:
   build-release:
     runs-on: ubuntu-latest
+    env:
+      TARGET: x86_64-unknown-linux-gnu
+    outputs:
+      version: ${{ steps.version.outputs.value }}
 
     steps:
       - name: Check out repository
@@ -65,15 +68,79 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-release-artifacts-${{ steps.version.outputs.value }}
-          path: |
-            dist/*.deb
-            dist/*.tar.gz
+          name: linux-release-${{ steps.version.outputs.value }}
+          path: dist/
+
+  windows-release:
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+
+      - name: Compute artifact version
+        id: version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Build Windows zip
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          ARCHIVE_ROOT="${APP_NAME}-${VERSION}-${TARGET}"
+          mkdir -p "dist/${ARCHIVE_ROOT}"
+          cp "target/release/${APP_NAME}.exe" "dist/${ARCHIVE_ROOT}/"
+          cp README.md "dist/${ARCHIVE_ROOT}/"
+          cd dist
+          powershell -Command "Compress-Archive -Path '${ARCHIVE_ROOT}' -DestinationPath '${ARCHIVE_ROOT}.zip'"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-${{ steps.version.outputs.value }}
+          path: dist/
+
+  publish-release:
+    needs: [build-release, windows-release]
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+
+    steps:
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-release-${{ needs.build-release.outputs.version }}
+          path: dist-linux
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-${{ needs.windows-release.outputs.version }}
+          path: dist-windows
 
       - name: Publish GitHub release assets
-        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*.deb
-            dist/*.tar.gz
+            dist-linux/*
+            dist-windows/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
