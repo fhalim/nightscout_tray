@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v1.2.3)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -39,6 +44,8 @@ jobs:
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ inputs.tag }}" ]]; then
+            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
           else
             echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
@@ -94,6 +101,8 @@ jobs:
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${{ inputs.tag }}" ]]; then
+            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
           else
             echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
@@ -121,7 +130,7 @@ jobs:
   publish-release:
     needs: [build-release, windows-release]
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Download Linux artifacts
@@ -139,6 +148,7 @@ jobs:
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.build-release.outputs.version }}
           files: |
             dist-linux/*
             dist-windows/*
