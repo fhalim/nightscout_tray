@@ -41,11 +41,13 @@ jobs:
       - name: Compute artifact version
         id: version
         shell: bash
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          elif [[ -n "${{ inputs.tag }}" ]]; then
-            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${DISPATCH_TAG}" ]]; then
+            echo "value=${DISPATCH_TAG}" >> "$GITHUB_OUTPUT"
           else
             echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
@@ -98,11 +100,13 @@ jobs:
       - name: Compute artifact version
         id: version
         shell: bash
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
         run: |
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             echo "value=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          elif [[ -n "${{ inputs.tag }}" ]]; then
-            echo "value=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${DISPATCH_TAG}" ]]; then
+            echo "value=${DISPATCH_TAG}" >> "$GITHUB_OUTPUT"
           else
             echo "value=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           fi
