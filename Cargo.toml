@@ -1,6 +1,6 @@
 [package]
 name = "nightscout_tray"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["NightScout Tray contributors"]
 description = "KDE system tray app for NightScout glucose readings"
 edition = "2024"
