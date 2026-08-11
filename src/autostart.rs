@@ -36,23 +36,15 @@ mod platform {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use winreg::enums::{HKEY_CURRENT_USER, KEY_READ};
+        use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};
         use winreg::RegKey;
         use crate::config::AppConfig;
 
-        const TEST_KEY: &str = r"Software\NightscoutTrayTest";
-        const TEST_VALUE: &str = "TestAutostart";
-
-        fn setup() -> RegKey {
-            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            let (key, _) = hkcu.create_subkey(TEST_KEY).expect("create test registry key");
-            key
-        }
-
-        fn teardown() {
-            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            let _ = hkcu.delete_subkey_all(TEST_KEY);
-        }
+        // Each test gets its own unique key path to avoid parallel-test interference.
+        const KEY_ENABLE: &str = r"Software\NightscoutTrayTestEnable";
+        const KEY_DISABLE: &str = r"Software\NightscoutTrayTestDisable";
+        const KEY_ABSENT: &str = r"Software\NightscoutTrayTestAbsent";
+        const VALUE: &str = "Autostart";
 
         fn config_with(launch: bool) -> AppConfig {
             AppConfig { launch_on_startup: launch, ..AppConfig::default() }
@@ -60,41 +52,46 @@ mod platform {
 
         #[test]
         fn enable_writes_exe_path_to_registry() {
-            setup();
-            sync_autostart_in(&config_with(true), TEST_KEY, TEST_VALUE)
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            hkcu.create_subkey(KEY_ENABLE).expect("create test registry key");
+
+            sync_autostart_in(&config_with(true), KEY_ENABLE, VALUE)
                 .expect("should write registry value");
 
-            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            let key = hkcu.open_subkey_with_flags(TEST_KEY, KEY_READ).unwrap();
-            let value: String = key.get_value(TEST_VALUE).expect("value should exist");
+            let key = hkcu.open_subkey_with_flags(KEY_ENABLE, KEY_READ).unwrap();
+            let value: String = key.get_value(VALUE).expect("value should exist");
             assert!(!value.is_empty(), "exe path should not be empty");
 
-            teardown();
+            let _ = hkcu.delete_subkey_all(KEY_ENABLE);
         }
 
         #[test]
         fn disable_removes_registry_value() {
-            let key = setup();
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            let (key, _) = hkcu.create_subkey(KEY_DISABLE).expect("create test registry key");
             let exe = std::env::current_exe().unwrap();
-            key.set_value(TEST_VALUE, &exe.to_string_lossy().as_ref()).unwrap();
+            key.set_value(VALUE, &exe.to_string_lossy().as_ref()).unwrap();
+            drop(key);
 
-            sync_autostart_in(&config_with(false), TEST_KEY, TEST_VALUE)
+            sync_autostart_in(&config_with(false), KEY_DISABLE, VALUE)
                 .expect("should delete registry value");
 
-            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-            let key = hkcu.open_subkey_with_flags(TEST_KEY, KEY_READ).unwrap();
-            let result: io::Result<String> = key.get_value(TEST_VALUE);
+            let key = hkcu.open_subkey_with_flags(KEY_DISABLE, KEY_READ).unwrap();
+            let result: io::Result<String> = key.get_value(VALUE);
             assert!(result.is_err(), "value should be absent after disable");
 
-            teardown();
+            let _ = hkcu.delete_subkey_all(KEY_DISABLE);
         }
 
         #[test]
         fn disable_when_value_absent_succeeds() {
-            setup();
-            sync_autostart_in(&config_with(false), TEST_KEY, TEST_VALUE)
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            hkcu.create_subkey(KEY_ABSENT).expect("create test registry key");
+
+            sync_autostart_in(&config_with(false), KEY_ABSENT, VALUE)
                 .expect("should succeed even when value does not exist");
-            teardown();
+
+            let _ = hkcu.delete_subkey_all(KEY_ABSENT);
         }
     }
 }
