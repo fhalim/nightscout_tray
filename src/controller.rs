@@ -17,7 +17,7 @@ pub fn run_controller(
     shared: Arc<SharedState>,
 ) {
     if let Err(error) = sync_autostart(&config) {
-        eprintln!("Could not sync KDE startup integration: {error}");
+        eprintln!("Could not sync startup integration: {error}");
     }
 
     if refresh_from_nightscout(&handle, &config, &shared).is_none() {
@@ -74,7 +74,7 @@ fn handle_startup_toggle(
     updated.launch_on_startup = !updated.launch_on_startup;
 
     if let Err(error) = sync_autostart(&updated) {
-        let message = format!("Could not update KDE startup integration: {error}");
+        let message = format!("Could not update startup integration: {error}");
         eprintln!("{message}");
         show_error_dialog(&message);
         return true;
